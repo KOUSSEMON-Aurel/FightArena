@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>FightArena - Prototype détection</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>FightArena <span>prototype détection</span></h1>
+      <span id="fps" class="pill">0 fps</span>
+      <span id="inf" class="pill">0 ms</span>
+      <span id="status" class="pill">Initialisation...</span>
+      <span id="guide" class="pill hidden"></span>
+      <button id="cam-btn">Démarrer la caméra</button>
+      <button id="flip-btn" class="hidden">Caméra avant/arrière</button>
+      <button id="rot-btn" class="hidden">⟳</button>
+    </header>
+    <main>
+      <div id="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="hint">Portrait · téléphone posé à 2 m · corps entier visible</div>
+      </div>
+      <aside id="panel">
+        <section class="card">
+          <h2>Jab</h2>
+          <div class="arm">
+            <div class="arm-head">
+              <b>Bras gauche</b>
+              <span id="phase-left" class="phase idle">idle</span>
+              <span id="count-left" class="count">0</span>
+            </div>
+            <div class="bar"><span id="ext-bar-left" class="fill ext"></span></div>
+            <label>extension <span id="ext-val-left">0.00</span> (seuil 0.95)</label>
+            <div class="bar"><span id="vel-bar-left" class="fill vel"></span></div>
+            <label>vitesse <span id="vel-val-left">0.00</span> (seuil 2.5)</label>
+            <div id="peak-left" class="peak">pic ext 0.00 · pic vel 0.00</div>
+          </div>
+          <div class="arm">
+            <div class="arm-head">
+              <b>Bras droit</b>
+              <span id="phase-right" class="phase idle">idle</span>
+              <span id="count-right" class="count">0</span>
+            </div>
+            <div class="bar"><span id="ext-bar-right" class="fill ext"></span></div>
+            <label>extension <span id="ext-val-right">0.00</span> (seuil 0.95)</label>
+            <div class="bar"><span id="vel-bar-right" class="fill vel"></span></div>
+            <label>vitesse <span id="vel-val-right">0.00</span> (seuil 2.5)</label>
+            <div id="peak-right" class="peak">pic ext 0.00 · pic vel 0.00</div>
+          </div>
+        </section>
+        <section class="card">
+          <h2>Garde / Bloc</h2>
+          <div id="guard-state" class="big">INACTIVE</div>
+          <div class="sub">tenue : <span id="guard-ms">0</span> ms (seuil 500 ms)</div>
+        </section>
+        <section class="card">
+          <h2>Réglages</h2>
+          <div class="row">
+            <label>Conf. détection <span id="det-conf-val">0.5</span></label>
+            <input id="det-conf" type="range" min="0.2" max="0.9" step="0.05" value="0.5" />
+          </div>
+          <div class="row">
+            <label>Conf. suivi <span id="track-conf-val">0.5</span></label>
+            <input id="track-conf" type="range" min="0.2" max="0.9" step="0.05" value="0.5" />
+          </div>
+          <div class="row">
+            <label>Lissage squelette <span id="smooth-val">0.30</span></label>
+            <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.3" />
+          </div>
+        </section>
+        <section class="card">
+          <h2>Calibration</h2>
+          <div class="row">
+            <button id="cal-clean" class="btn-clean">Enregistrer propre</button>
+            <button id="cal-mou" class="btn-mou">Enregistrer mou</button>
+          </div>
+          <div id="cal-status">0 propre / 0 mou</div>
+          <div id="cal-state">Prêt</div>
+          <button id="export-btn">Exporter CSV</button>
+        </section>
+        <section class="card">
+          <h2>Événements</h2>
+          <div id="log"></div>
+        </section>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
