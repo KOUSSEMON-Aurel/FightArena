@@ -33,7 +33,11 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
  * - Lissage One-Euro (LandmarkSmoother) sur x/y/z normalisés avant mise à
  *   l'échelle : filtre le bruit du modèle, garde la réactivité des gestes.
  */
-class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
+class MediaPipePoseAnalyzer(
+    private val overlay: PoseOverlayView,
+    private val model: String = "full",
+    private val forceCpu: Boolean = false,
+) :
     ImageAnalysis.Analyzer, PoseSource {
 
     override val stats = LatencyStats(240)
@@ -57,12 +61,20 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
     // ── A/B test CPU vs GPU ────────────────────────────────────────────────
     // true  -> init CPU uniquement, pas de swap GPU, pas de watchdog GPU
     // false -> comportement normal : CPU eager puis swap GPU en arrière-plan
-    private val FORCE_CPU_ABTEST = false
+    private val FORCE_CPU_ABTEST: Boolean
+    // Modèle cible : "full" (pose_landmarker_full.task) ou "lite" (lite.task).
+    // Le CPU eager utilise TOUJOURS le lite (~2x plus rapide) : c'est le warm-up
+    // pendant l'init GPU (~12s de shaders). Le swap final utilise modelName.
+    private val modelName: String
 
     init {
-        fun create(delegate: Delegate, gen: Int): PoseLandmarker {
+        modelName = model
+        FORCE_CPU_ABTEST = forceCpu
+        fun create(delegate: Delegate, gen: Int, useModel: String): PoseLandmarker {
             val baseOptions = BaseOptions.builder()
-                .setModelAssetPath("pose_landmarker_full.task")
+                .setModelAssetPath(
+                    if (useModel == "lite") "pose_landmarker_lite.task" else "pose_landmarker_full.task"
+                )
                 .setDelegate(delegate)
                 .build()
             val options = PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -79,20 +91,22 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
                 .build()
             return PoseLandmarker.createFromOptions(overlay.context.applicationContext, options)
         }
-        // CPU d'abord : init rapide sur le main thread, pas d'ANR.
+        // CPU d'abord : init rapide sur le main thread, pas d'ANR. Toujours le
+        // lite (2x plus rapide) : c'est la phase de warm-up pendant l'init GPU.
         poseLandmarker = try {
-            create(Delegate.CPU, 0)
+            create(Delegate.CPU, 0, "lite")
         } catch (e: RuntimeException) {
             Log.e("MediaPipeAnalyzer", "CPU init failed", e)
             throw e
         }
         delegateUsed = "cpu"
-        Log.i("MediaPipeAnalyzer", "PoseLandmarker init OK delegate=cpu")
+        Log.i("MediaPipeAnalyzer", "PoseLandmarker init OK delegate=cpu model=lite (warm-up)")
         // GPU en arrière-plan : swap atomique quand prêt (jamais sur le main).
         // Désactivé en mode A/B CPU (FORCE_CPU_ABTEST=true).
         if (!FORCE_CPU_ABTEST) gpuInitExecutor.execute {
+            val initStartNs = System.nanoTime()
             try {
-                val d = create(Delegate.GPU, 1)
+                val d = create(Delegate.GPU, 1, modelName)
                 if (closed) {
                     try { d.close() } catch (_: Exception) {}
                     return@execute
@@ -100,13 +114,26 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
                 generation = 1
                 poseLandmarker = d
                 delegateUsed = "gpu"
+                gpuReady = true
+                // Reset des stats : la fenêtre contient les frames CPU lentes de
+                // l'init GPU (~12s de compilation shaders). Sans reset, le watchdog
+                // croit que le GPU est lent et rebascule en CPU (faux positif).
+                stats.reset()
+                frameCount = 0
                 watchdogChecked = false
-                Log.i("MediaPipeAnalyzer", "PoseLandmarker GPU ready, swapped (background init)")
+                Log.i(
+                    "MediaPipeAnalyzer",
+                    "PoseLandmarker GPU ready, swapped (background init) in " +
+                        "${"%.1f".format((System.nanoTime() - initStartNs) / 1e6f)}ms",
+                )
             } catch (e: Exception) {
                 Log.w("MediaPipeAnalyzer", "GPU init failed on background thread, keep CPU", e)
             }
         }
     }
+
+    /** true dès que le GPU est actif (false = inférence CPU en attendant). */
+    @Volatile var gpuReady = false
 
     @Volatile private var closed = false
 
@@ -122,7 +149,7 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
             try { poseLandmarker.close() } catch (_: Exception) {}
             try {
                 val baseOptions = BaseOptions.builder()
-                    .setModelAssetPath("pose_landmarker_full.task")
+                    .setModelAssetPath("pose_landmarker_lite.task")
                     .setDelegate(Delegate.CPU)
                     .build()
                 val options = PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -166,6 +193,9 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
     private var lastAnalyzeNs = 0L
     private var gapMs = 0f   // temps entre 2 entrées analyze() : caméra seule
     private var emptyCount = 0  // frames résultat sans aucune pose (perte de détection)
+
+    /** Mode vidéo de test : appelé une fois par résultat traité (frame consommée). */
+    @Volatile var frameDone: (() -> Unit)? = null
 
     // ── Debug one-shot (premier frame + dump PNG) ───────────────────────────
     private var debugLogged = false
@@ -222,23 +252,31 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
         }
         imageProxy.close()
 
-        // 2. Rotation en amont via Canvas (Skia) — modèle reçoit l'image redressée.
-        //    Les landmarks sortent donc dans le repère PORTRAIT (pixels), comme
-        //    l'ancien ML Kit : l'overlay mappe correctement. Pas d'ImageProcessingOptions
-        //    (setRotationDegrees retournait les points dans un repère différent -> désordre).
+        processBitmap(buf, w, h, rotation)
+        cycMs = 0.9f * cycMs + 0.1f * ((System.nanoTime() - cycStart) / 1e6f)
+    }
+
+    /**
+     * Rotation Canvas (Skia) + détection async — utilisé par la caméra ET le
+     * mode vidéo de test. Le modèle reçoit l'image redressée : les landmarks
+     * sortent dans le repère PORTRAIT (pixels), comme l'ancien ML Kit, et
+     * l'overlay mappe correctement. Pas d'ImageProcessingOptions
+     * (setRotationDegrees retournait les points dans un repère différent -> désordre).
+     */
+    fun processBitmap(src: Bitmap, srcW: Int, srcH: Int, rotation: Int) {
         val isRotated = rotation % 180 != 0
-        val rw = if (isRotated) h else w
-        val rh = if (isRotated) w else h
+        val rw = if (isRotated) srcH else srcW
+        val rh = if (isRotated) srcW else srcH
         val mpBmp: Bitmap
         if (rotation != 0) {
             val rot = rotBmp ?: Bitmap.createBitmap(rw, rh, Bitmap.Config.ARGB_8888).also { rotBmp = it }
             val matrix = Matrix()
-            matrix.setRotate(rotation.toFloat(), w / 2f, h / 2f)
-            matrix.postTranslate((rw - w) / 2f, (rh - h) / 2f)
-            Canvas(rot).drawBitmap(buf, matrix, null)
+            matrix.setRotate(rotation.toFloat(), srcW / 2f, srcH / 2f)
+            matrix.postTranslate((rw - srcW) / 2f, (rh - srcH) / 2f)
+            Canvas(rot).drawBitmap(src, matrix, null)
             mpBmp = rot
         } else {
-            mpBmp = buf
+            mpBmp = src
         }
         pendingImageW = rw
         pendingImageH = rh
@@ -254,7 +292,6 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
             Log.e("MediaPipeAnalyzer", "detectAsync error", e)
         }
         detMs = 0.9f * detMs + 0.1f * ((System.nanoTime() - detStart) / 1e6f)
-        cycMs = 0.9f * cycMs + 0.1f * ((System.nanoTime() - cycStart) / 1e6f)
     }
 
     // ── Lissage One-Euro (x/y/z normalisés, 99 filtres pré-alloués) ────────
@@ -298,6 +335,8 @@ class MediaPipePoseAnalyzer(private val overlay: PoseOverlayView) :
             }
             overlay.onMediaPipePose(pts, latencyMs, pendingImageW, pendingImageH, this)
         }
+
+        frameDone?.invoke()  // mode vidéo : signale que la frame est consommée
 
         if (frameCount % 60 == 0) {
             val msg =

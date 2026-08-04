@@ -23,6 +23,12 @@ class LatencyStats(private val windowSize: Int = 240) {
         if (n < windowSize) n++
     }
 
+    /** Vide la fenêtre : la moyenne repart de zéro (utilisé au swap CPU -> GPU). */
+    fun reset() {
+        head = 0
+        n = 0
+    }
+
     fun avg(): Float {
         if (n == 0) return 0f
         var sum = 0f
