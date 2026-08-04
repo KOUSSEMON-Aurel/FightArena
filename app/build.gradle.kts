@@ -33,4 +33,5 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
     implementation(libs.mlkit.pose.detection)
+    implementation(libs.mediapipe.tasks.vision)
 }

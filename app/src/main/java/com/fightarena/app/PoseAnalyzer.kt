@@ -45,11 +45,17 @@ class LatencyStats(private val windowSize: Int = 240) {
     }
 }
 
+/** Source de pose commune aux analyseurs (ML Kit ou MediaPipe Tasks) pour l'overlay. */
+interface PoseSource {
+    val stats: LatencyStats
+    val frameCount: Int
+}
+
 /**
  * Analyseur CameraX -> ML Kit Pose Detection (BlazePose 33 points, STREAM_MODE).
  * Mesure la latence de chaque inference et pousse le résultat vers l'overlay.
  */
-class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyzer {
+class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyzer, PoseSource {
 
     private val detector: PoseDetector = PoseDetection.getClient(
         PoseDetectorOptions.Builder()
@@ -60,8 +66,8 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
             .build()
     )
 
-    val stats = LatencyStats(240)
-    var frameCount = 0
+    override val stats = LatencyStats(240)
+    override var frameCount = 0
         private set
 
     private var lastFrameNs = 0L

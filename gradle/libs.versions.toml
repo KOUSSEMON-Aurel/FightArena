@@ -3,6 +3,7 @@ agp = "9.3.1"
 kotlin = "2.4.10"
 camerax = "1.6.1"
 mlkit-pose = "18.0.0-beta5"
+mediapipe-tasks = "1.0.0"
 activity = "1.13.0"
 
 [libraries]
@@ -12,6 +13,7 @@ camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.r
 camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mlkit-pose-detection = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkit-pose" }
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipe-tasks" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
