@@ -4,8 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Size
+import android.view.View
+import android.widget.ImageButton
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -20,6 +24,8 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var overlay: PoseOverlayView
     private val analysisExecutor = Executors.newSingleThreadExecutor()
+    private var camera: Camera? = null
+    private var torchOn = false
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -31,6 +37,7 @@ class MainActivity : ComponentActivity() {
         setContentView(R.layout.activity_main)
         overlay = findViewById(R.id.poseOverlay)
         overlay.mirrored = true
+        initTorchButton()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
@@ -70,13 +77,27 @@ class MainActivity : ComponentActivity() {
                 .also { it.setAnalyzer(analysisExecutor, PoseAnalyzer(overlay)) }
 
             cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(
+            camera = cameraProvider.bindToLifecycle(
                 this,
                 CameraSelector.DEFAULT_FRONT_CAMERA,
                 preview,
                 analysis,
             )
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun initTorchButton() {
+        val torchButton = findViewById<ImageButton>(R.id.torchButton)
+        torchButton.setOnClickListener {
+            val cam = camera
+            if (cam == null || !cam.cameraInfo.hasFlashUnit()) {
+                Toast.makeText(this, R.string.no_flash, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            torchOn = !torchOn
+            cam.cameraControl.enableTorch(torchOn)
+            torchButton.alpha = if (torchOn) 1f else 0.4f
+        }
     }
 
     override fun onDestroy() {

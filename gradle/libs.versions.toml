@@ -12,6 +12,7 @@ camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.r
 camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mlkit-pose-detection = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkit-pose" }
+mlkit-pose-detection-accurate = { group = "com.google.mlkit", name = "pose-detection-accurate", version.ref = "mlkit-pose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

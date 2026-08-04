@@ -12,4 +12,15 @@
         android:id="@+id/poseOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <ImageButton
+        android:id="@+id/torchButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:background="@drawable/bg_torch_button"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/ic_torch"
+        android:alpha="0.4" />
 </FrameLayout>

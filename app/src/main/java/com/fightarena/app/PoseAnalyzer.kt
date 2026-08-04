@@ -7,6 +7,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.PoseDetector
+import com.google.mlkit.vision.pose.PoseDetectorOptionsBase
+import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import kotlin.math.min
 
@@ -46,18 +48,39 @@ class LatencyStats(private val windowSize: Int = 240) {
 }
 
 /**
+ * Modèle de détection de pose utilisé par l'app.
+ *
+ * Le modèle ACCURATE (BlazePose full, 256x256) est plus stable sur les coordonnées
+ * x/y (angles coude/épaule fiables pour la spec) mais plus lent ; le modèle BASE
+ * (lite, 192x192) est embarqué aussi pour permettre une comparaison ultérieure
+ * (perf vs stabilité) par simple changement de constante.
+ */
+enum class PoseModel(val label: String) {
+    ACCURATE("full"),
+    BASE("lite")
+}
+
+private val POSE_MODEL: PoseModel = PoseModel.ACCURATE
+
+/**
  * Analyseur CameraX -> ML Kit Pose Detection (BlazePose 33 points, STREAM_MODE).
  * Mesure la latence de chaque inference et pousse le résultat vers l'overlay.
  */
 class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyzer {
 
     private val detector: PoseDetector = PoseDetection.getClient(
-        PoseDetectorOptions.Builder()
-            .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
-            // CPU forcé : pas de mini-benchmark d'accélération (crashe en natif sur
-            // certains SoC) et comportement stable et prévisible sur tous les téléphones.
-            .setPreferredHardwareConfigs(PoseDetectorOptions.CPU)
-            .build()
+        when (POSE_MODEL) {
+            PoseModel.ACCURATE -> AccuratePoseDetectorOptions.Builder()
+                .setDetectorMode(PoseDetectorOptionsBase.STREAM_MODE)
+                .setPreferredHardwareConfigs(PoseDetectorOptionsBase.CPU)
+                .build()
+            PoseModel.BASE -> PoseDetectorOptions.Builder()
+                .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
+                // CPU forcé : pas de mini-benchmark d'accélération (crashe en natif sur
+                // certains SoC) et comportement stable et prévisible sur tous les téléphones.
+                .setPreferredHardwareConfigs(PoseDetectorOptions.CPU)
+                .build()
+        }
     )
 
     val stats = LatencyStats(240)
