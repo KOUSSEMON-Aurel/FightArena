@@ -75,6 +75,16 @@ class PoseOverlayView @JvmOverloads constructor(
     private var lastFrameNs = 0L
     private var stats: LatencyStats? = null
 
+    // Mapping précalculé (recalculé seulement si taille ou dimension image change)
+    private var mapScale = 1f
+    private var mapOffsetX = 0f
+    private var mapOffsetY = 0f
+    // Buffers réutilisés : zéro allocation dans onDraw (au lieu de ~730/frame)
+    private val linePts = FloatArray(4 * SKELETON.size)
+    private val tmpA = FloatArray(2)
+    private val tmpB = FloatArray(2)
+    private val tmpP = FloatArray(2)
+
     /** Preview en miroir (caméra avant) : on inverse l'axe X des landmarks pour rester aligné. */
     var mirrored = false
 
@@ -102,8 +112,11 @@ class PoseOverlayView @JvmOverloads constructor(
 
     private fun updateFrame(latencyMs: Float, imageWidth: Int, imageHeight: Int, analyzer: PoseSource) {
         this.latencyMs = latencyMs
-        this.imageW = imageWidth
-        this.imageH = imageHeight
+        if (imageWidth != this.imageW || imageHeight != this.imageH) {
+            this.imageW = imageWidth
+            this.imageH = imageHeight
+            recomputeMap()
+        }
         this.frameCount = analyzer.frameCount
         this.stats = analyzer.stats
         val now = System.nanoTime()
@@ -115,20 +128,30 @@ class PoseOverlayView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
+    /** Recalcul du mapping FILL_CENTER — ne dépend que des tailles, pas du contenu. */
+    private fun recomputeMap() {
+        if (imageW <= 0 || imageH <= 0) return
+        mapScale = maxOf(width / imageW.toFloat(), height / imageH.toFloat())
+        mapOffsetX = (width - imageW * mapScale) / 2f
+        mapOffsetY = (height - imageH * mapScale) / 2f
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        recomputeMap()
+    }
+
     /**
      * Mapping image -> écran identique au PreviewView (FILL_CENTER) :
      * on agrandit l'image pour remplir la vue (crop symétrique), puis on applique le miroir.
+     * Écrit dans `out` (pré-alloué) — zéro allocation.
      */
-    private fun map(x: Float, y: Float): FloatArray {
-        val scale = maxOf(width / imageW.toFloat(), height / imageH.toFloat())
-        val offsetX = (width - imageW * scale) / 2f
-        val offsetY = (height - imageH * scale) / 2f
-        val px = offsetX + x * scale
-        val py = offsetY + y * scale
-        return if (mirrored) floatArrayOf(width - px, py) else floatArrayOf(px, py)
+    private fun map(x: Float, y: Float, out: FloatArray) {
+        val px = mapOffsetX + x * mapScale
+        val py = mapOffsetY + y * mapScale
+        out[0] = if (mirrored) width - px else px
+        out[1] = py
     }
-
-    private fun map(lm: PoseLandmark): FloatArray = map(lm.position.x, lm.position.y)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -157,19 +180,21 @@ class PoseOverlayView @JvmOverloads constructor(
     }
 
     private fun drawSkeleton(canvas: Canvas, pose: Pose?) {
-        val pts = FloatArray(4)
+        var n = 0
         for (edge in SKELETON) {
             val a = imagePoint(pose, edge[0]) ?: continue
             val b = imagePoint(pose, edge[1]) ?: continue
-            val pa = map(a[0], a[1])
-            val pb = map(b[0], b[1])
-            pts[0] = pa[0]; pts[1] = pa[1]; pts[2] = pb[0]; pts[3] = pb[1]
-            canvas.drawLines(pts, skeletonPaint)
+            map(a[0], a[1], tmpA)
+            map(b[0], b[1], tmpB)
+            linePts[n] = tmpA[0]; linePts[n + 1] = tmpA[1]
+            linePts[n + 2] = tmpB[0]; linePts[n + 3] = tmpB[1]
+            n += 4
         }
+        if (n > 0) canvas.drawLines(linePts, 0, n, skeletonPaint)
         for (i in 0 until 33) {
             val p = imagePoint(pose, i) ?: continue
-            val s = map(p[0], p[1])
-            canvas.drawCircle(s[0], s[1], 7f, jointPaint)
+            map(p[0], p[1], tmpP)
+            canvas.drawCircle(tmpP[0], tmpP[1], 7f, jointPaint)
         }
     }
 

@@ -120,6 +120,7 @@ class MediaPipePoseAnalyzer(
                 // croit que le GPU est lent et rebascule en CPU (faux positif).
                 stats.reset()
                 frameCount = 0
+                emptyCount = 0
                 watchdogChecked = false
                 Log.i(
                     "MediaPipeAnalyzer",
@@ -179,6 +180,7 @@ class MediaPipePoseAnalyzer(
     // ── Buffer réutilisé — zéro allocation par frame ───────────────────────
     private var buffer: Bitmap? = null   // bitmap source (w×h), réutilisé
     private var rotBmp: Bitmap? = null   // bitmap redressé (portrait), réutilisé
+    private val rotateMatrix = Matrix()  // réutilisé (pas de new Matrix à chaque frame)
 
     // ── Mesures ────────────────────────────────────────────────────────────
     private var lastFrameNs = 0L
@@ -243,8 +245,10 @@ class MediaPipePoseAnalyzer(
         val h = image.height
         val buf = buffer ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { buffer = it }
         try {
+            val copyStart = System.nanoTime()
             image.planes[0].buffer.rewind()
             buf.copyPixelsFromBuffer(image.planes[0].buffer)
+            copyMs = 0.9f * copyMs + 0.1f * ((System.nanoTime() - copyStart) / 1e6f)
         } catch (e: Exception) {
             Log.e("MediaPipeAnalyzer", "copy error", e)
             imageProxy.close()
@@ -270,10 +274,9 @@ class MediaPipePoseAnalyzer(
         val mpBmp: Bitmap
         if (rotation != 0) {
             val rot = rotBmp ?: Bitmap.createBitmap(rw, rh, Bitmap.Config.ARGB_8888).also { rotBmp = it }
-            val matrix = Matrix()
-            matrix.setRotate(rotation.toFloat(), srcW / 2f, srcH / 2f)
-            matrix.postTranslate((rw - srcW) / 2f, (rh - srcH) / 2f)
-            Canvas(rot).drawBitmap(src, matrix, null)
+            rotateMatrix.setRotate(rotation.toFloat(), srcW / 2f, srcH / 2f)
+            rotateMatrix.postTranslate((rw - srcW) / 2f, (rh - srcH) / 2f)
+            Canvas(rot).drawBitmap(src, rotateMatrix, null)
             mpBmp = rot
         } else {
             mpBmp = src
@@ -319,19 +322,28 @@ class MediaPipePoseAnalyzer(
             smoother.reset()  // personne dans le cadre : évite la traînée au retour
             overlay.onMediaPipePose(emptyList(), latencyMs, pendingImageW, pendingImageH, this)
         } else {
-            val t = SystemClock.uptimeMillis() / 1000.0
             val w = pendingImageW.toFloat()
             val h = pendingImageH.toFloat()
+            // Chemin rapide (OneEuro off) : une ArrayList + 33 FloatArray par
+            // résultat (réutilisée par l'overlay). Pas de double-branche
+            // if(sx!=null) par point.
             val pts = ArrayList<FloatArray>(landmarks.size)
-            for ((i, lm) in landmarks.withIndex()) {
-                val sx = if (ONEEURO_ENABLED) smoother.smooth(i, lm.x().toDouble(), lm.y().toDouble(), lm.z().toDouble(), t) else null
-                pts.add(
-                    floatArrayOf(
-                        if (sx != null) (sx[0] * w).toFloat() else lm.x() * w,
-                        if (sx != null) (sx[1] * h).toFloat() else lm.y() * h,
-                        lm.visibility().orElse(0f),
-                    ),
-                )
+            if (ONEEURO_ENABLED) {
+                val t = SystemClock.uptimeMillis() / 1000.0
+                for ((i, lm) in landmarks.withIndex()) {
+                    val sx = smoother.smooth(i, lm.x().toDouble(), lm.y().toDouble(), lm.z().toDouble(), t)
+                    pts.add(
+                        floatArrayOf(
+                            (sx[0] * w).toFloat(),
+                            (sx[1] * h).toFloat(),
+                            lm.visibility().orElse(0f),
+                        ),
+                    )
+                }
+            } else {
+                for (lm in landmarks) {
+                    pts.add(floatArrayOf(lm.x() * w, lm.y() * h, lm.visibility().orElse(0f)))
+                }
             }
             overlay.onMediaPipePose(pts, latencyMs, pendingImageW, pendingImageH, this)
         }

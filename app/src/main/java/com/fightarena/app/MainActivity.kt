@@ -146,7 +146,11 @@ class MainActivity : ComponentActivity() {
             val resolutionSelector = ResolutionSelector.Builder()
                 .setResolutionStrategy(
                     ResolutionStrategy(
-                        Size(640, 480),
+                        // Analyse en petite résolution : MediaPipe redimensionne vers
+                        // son entrée fixe (256×256 full) de toute façon, donc 640×480
+                        // ne sert qu'à payer une copie CPU 4x plus grosse à chaque frame.
+                        // Le preview reste plein écran (use case séparé).
+                        Size(320, 240),
                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
                     )
                 )
