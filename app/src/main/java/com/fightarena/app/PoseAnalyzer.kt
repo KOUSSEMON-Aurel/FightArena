@@ -26,6 +26,12 @@ class LatencyStats(private val windowSize: Int = 240) {
         if (n < windowSize) n++
     }
 
+    /** Vide la fenêtre : la moyenne repart de zéro (utilisé après le warm-up). */
+    fun reset() {
+        head = 0
+        n = 0
+    }
+
     fun avg(): Float {
         if (n == 0) return 0f
         var sum = 0f
@@ -95,9 +101,51 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
 
     private var lastFrameNs = 0L
     private var fps = 0f
+    private var callsCount = 0
+    private var droppedCount = 0
+    private var warmedUp = false
+
+    /** Backpressure : true tant que process() n'a pas rendu son résultat.
+     *  ML Kit process() est asynchrone : sans garde, chaque frame CameraX
+     *  déclenche une inférence et elles s'empilent (calls >> frames),
+     *  la latence grossit à chaque frame. On recrée le comportement
+     *  synchrone avec KEEP_ONLY_LATEST en droppant les frames pendant
+     *  qu'une détection est en cours. */
+    @Volatile private var detectionInFlight = false
+
+    /**
+     * Warm-up : une détection sur image noire avant le flux réel.
+     * Le 1er vrai frame GPU inclut la compilation des shaders Mali (spikes
+     * 600-1500ms observés). La détection de warm-up absorbe ce coût hors flux
+     * (process asynchrone : le flux camera continue, seule l'inférence warm-up
+     * tourne). On reset les stats ensuite pour ne pas polluer l'avg/p95.
+     */
+    private fun warmUp() {
+        try {
+            val bmp = android.graphics.Bitmap.createBitmap(256, 256, android.graphics.Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(android.graphics.Color.BLACK)
+            detector.process(InputImage.fromBitmap(bmp, 0))
+                .addOnSuccessListener { stats.reset(); Log.i("PoseAnalyzer", "warm-up done") }
+                .addOnFailureListener { e -> Log.w("PoseAnalyzer", "warm-up failed", e) }
+        } catch (e: Exception) {
+            Log.w("PoseAnalyzer", "warm-up exception", e)
+        }
+    }
 
     override fun analyze(imageProxy: ImageProxy) {
+        if (!warmedUp) {
+            warmedUp = true
+            warmUp()
+        }
+        if (detectionInFlight) {
+            droppedCount++
+            imageProxy.close()
+            return
+        }
+        detectionInFlight = true
+        callsCount++
         val mediaImage = imageProxy.image ?: run {
+            detectionInFlight = false
             imageProxy.close()
             return
         }
@@ -118,17 +166,21 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                 if (frameCount % 60 == 0) {
                     Log.i(
                         "PosePerf",
-                        "frames=$frameCount fps=${"%.1f".format(fps)} " +
+                        "frames=$frameCount calls=$callsCount fps=${"%.1f".format(fps)} " +
                             "infer_avg=${"%.1f".format(stats.avg())}ms " +
                             "p95=${"%.1f".format(stats.p95())}ms max=${"%.1f".format(stats.max())}ms " +
+                            "drop=$droppedCount " +
                             "world3d=${world3dSummary(pose)}"
                     )
                 }
                 overlay.onPose(pose, latencyMs, displayW, displayH, this)
+                // Libère le backpressure AVANT close() : l'image est consommée par ML Kit.
+                detectionInFlight = false
                 imageProxy.close()
             }
             .addOnFailureListener { e: Exception ->
                 Log.e("PoseAnalyzer", "pose detection failed", e)
+                detectionInFlight = false
                 imageProxy.close()
             }
     }
