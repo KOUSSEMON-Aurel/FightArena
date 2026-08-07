@@ -105,6 +105,11 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
     private var droppedCount = 0
     private var warmedUp = false
 
+    /** Lissage One-Euro des 33 landmarks (x, y, z) : anti-saccades sans traînée
+     *  sur les gestes rapides. Zéro allocation : écrit dans le buffer partagé. */
+    private val smoother = LandmarkSmoother()
+    private val smoothOut = FloatArray(3)
+
     /** Backpressure : true tant que process() n'a pas rendu son résultat.
      *  ML Kit process() est asynchrone : sans garde, chaque frame CameraX
      *  déclenche une inférence et elles s'empilent (calls >> frames),
@@ -163,6 +168,12 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                 val rotated = imageProxy.imageInfo.rotationDegrees % 180 != 0
                 val displayW = if (rotated) imageProxy.height else imageProxy.width
                 val displayH = if (rotated) imageProxy.width else imageProxy.height
+                // Filtrage One-Euro (normalisé par dims) + remplissage du buffer publié.
+                // Une allocation de 528B par frame, volontairement pas réutilisée :
+                // le listener tourne sur un thread ML Kit, l'overlay lit la
+                // référence sur le main thread (pas de course d'écriture).
+                val landmarkBuf = FloatArray(33 * 4)
+                fillLandmarkBuf(pose, landmarkBuf, displayW, displayH, startNs / 1e9)
                 if (frameCount % 60 == 0) {
                     Log.i(
                         "PosePerf",
@@ -170,10 +181,10 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                             "infer_avg=${"%.1f".format(stats.avg())}ms " +
                             "p95=${"%.1f".format(stats.p95())}ms max=${"%.1f".format(stats.max())}ms " +
                             "drop=$droppedCount " +
-                            "world3d=${world3dSummary(pose)}"
+                            "world3d=${world3dSummary(landmarkBuf)}"
                     )
                 }
-                overlay.onPose(pose, latencyMs, displayW, displayH, this)
+                overlay.onPose(landmarkBuf, latencyMs, displayW, displayH, this)
                 // Libère le backpressure AVANT close() : l'image est consommée par ML Kit.
                 detectionInFlight = false
                 imageProxy.close()
@@ -186,22 +197,54 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
     }
 
     /**
+     * Filtre les 33 landmarks et remplit landmarkBuf ([x,y,z,lik]*33, pixels).
+     * Personne absente -> reset du smoother (pas de traînée au retour).
+     * Landmark absent -> -1 (invisible, l'overlay ne le dessine pas).
+     * Le filtre travaille en coordonnées normalisées (One-Euro est échelle-
+     * dépendant) puis re-écrit des pixels.
+     */
+    private fun fillLandmarkBuf(pose: Pose, landmarkBuf: FloatArray, imageW: Int, imageH: Int, t: Double) {
+        if (pose.getAllPoseLandmarks().isEmpty()) {
+            smoother.reset()
+            landmarkBuf.fill(-1f)
+            return
+        }
+        for (i in 0 until 33) {
+            val l = pose.getPoseLandmark(i)
+            val idx = i * 4
+            if (l == null) {
+                landmarkBuf[idx] = -1f
+                landmarkBuf[idx + 1] = -1f
+                landmarkBuf[idx + 2] = -1f
+                landmarkBuf[idx + 3] = -1f
+                continue
+            }
+            val p = l.position3D
+            smoother.smooth(i, p.x, p.y, p.z, imageW, imageH, t, smoothOut)
+            landmarkBuf[idx] = smoothOut[0]
+            landmarkBuf[idx + 1] = smoothOut[1]
+            landmarkBuf[idx + 2] = smoothOut[2]
+            landmarkBuf[idx + 3] = l.inFrameLikelihood
+        }
+    }
+
+    /**
      * Résumé 3D relatif (ML Kit : profondeur z en pixels, relative à l'image ;
      * worldLandmarks en mètres approximatifs normalisés sur la hauteur estimée).
-     * Retourne "hipX,hipY,hipZ shX,shY,shZ" ou "none" si invisibles.
+     * Utilise les coordonnées FILTRÉES (landmarkBuf) : le log reflète la
+     * stabilité réelle après lissage. Retourne "none" si invisible.
      */
-    private fun world3dSummary(pose: Pose): String {
-        val hip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP) ?: return "none"
-        val shoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER) ?: return "none"
-        val all = pose.getAllPoseLandmarks()
-        if (all.isEmpty()) return "none"
-        val hipZ = all[PoseLandmark.LEFT_HIP].position3D.z
-        val shZ = all[PoseLandmark.LEFT_SHOULDER].position3D.z
-        val hipY = all[PoseLandmark.LEFT_HIP].position3D.y
-        val shY = all[PoseLandmark.LEFT_SHOULDER].position3D.y
+    private fun world3dSummary(landmarkBuf: FloatArray): String {
+        val hipIdx = PoseLandmark.LEFT_HIP * 4
+        val shIdx = PoseLandmark.LEFT_SHOULDER * 4
+        if (landmarkBuf[hipIdx + 3] < 0f || landmarkBuf[shIdx + 3] < 0f) return "none"
+        val hipZ = landmarkBuf[hipIdx + 2]
+        val shZ = landmarkBuf[shIdx + 2]
+        val hipY = landmarkBuf[hipIdx + 1]
+        val shY = landmarkBuf[shIdx + 1]
         val depthFrac = (hipZ - shZ) / (hipY - shY).let { if (it == 0f) 1f else it }
-        return "hip=${"%.0f,%.0f,%.0f".format(hip.position3D.x, hipY, hipZ)} " +
-            "sh=${"%.0f,%.0f,%.0f".format(shoulder.position3D.x, shY, shZ)} " +
+        return "hip=${"%.0f,%.0f,%.0f".format(landmarkBuf[hipIdx], hipY, hipZ)} " +
+            "sh=${"%.0f,%.0f,%.0f".format(landmarkBuf[shIdx], shY, shZ)} " +
             "depth_slope=${"%.2f".format(depthFrac)}"
     }
 

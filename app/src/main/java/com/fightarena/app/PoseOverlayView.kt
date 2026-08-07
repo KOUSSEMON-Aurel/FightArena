@@ -6,13 +6,13 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
-import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 
 /**
  * Overlay : squelette 33 points, guide de placement (spec section 1) et HUD de perf.
- * Coordonnées ML Kit : repère de l'image analysée (paysage), x->droite, y->bas.
- * Zero-alloc dans onDraw : mapping précalculé + buffers réutilisés (au lieu de ~730 allocs/frame).
+ * Entrée : landmarkBuf [x,y,z,lik]*33 en pixels image (repère ML Kit, x->droite,
+ * y->bas), déjà lissé One-Euro par PoseAnalyzer ; lik < 0 = landmark absent.
+ * Zero-alloc dans onDraw : mapping précalculé + buffers réutilisés.
  */
 class PoseOverlayView @JvmOverloads constructor(
     context: Context,
@@ -66,7 +66,7 @@ class PoseOverlayView @JvmOverloads constructor(
     private val warnPaint = Paint(textPaint).apply { color = Color.rgb(255, 80, 80) }
     private val okPaint = Paint(textPaint).apply { color = Color.rgb(0, 255, 140) }
 
-    private var pose: Pose? = null
+    private var landmarkBuf: FloatArray? = null
     private var latencyMs = 0f
     private var imageW = 1
     private var imageH = 1
@@ -88,8 +88,8 @@ class PoseOverlayView @JvmOverloads constructor(
     /** Preview en miroir (caméra avant) : on inverse l'axe X des landmarks pour rester aligné. */
     var mirrored = false
 
-    fun onPose(pose: Pose, latencyMs: Float, imageWidth: Int, imageHeight: Int, analyzer: PoseSource) {
-        this.pose = pose
+    fun onPose(landmarkBuf: FloatArray, latencyMs: Float, imageWidth: Int, imageHeight: Int, analyzer: PoseSource) {
+        this.landmarkBuf = landmarkBuf
         updateFrame(latencyMs, imageWidth, imageHeight, analyzer)
     }
 
@@ -132,47 +132,51 @@ class PoseOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val pose = pose ?: return
+        val landmarkBuf = landmarkBuf ?: return
 
-        drawPlacementGuide(canvas, pose)
-        drawSkeleton(canvas, pose)
+        drawPlacementGuide(canvas, landmarkBuf)
+        drawSkeleton(canvas, landmarkBuf)
         drawHud(canvas)
     }
 
-    private fun lm(pose: Pose, i: Int, out: FloatArray): FloatArray? {
-        val l = pose.getPoseLandmark(i) ?: return null
-        if (l.inFrameLikelihood < DISPLAY_VISIBILITY) return null
-        return mapTo(l.position.x, l.position.y, out)
+    /** Retourne null si le landmark i est absent (lik < 0) ou peu fiable. */
+    private fun lm(buf: FloatArray, i: Int, out: FloatArray): FloatArray? {
+        val idx = i * 4
+        if (buf[idx + 3] < DISPLAY_VISIBILITY) return null
+        return mapTo(buf[idx], buf[idx + 1], out)
     }
 
-    private fun drawSkeleton(canvas: Canvas, pose: Pose) {
+    private fun drawSkeleton(canvas: Canvas, buf: FloatArray) {
         var edge = 0
         for (e in SKELETON) {
-            val a = lm(pose, e[0], tmpA) ?: continue
-            val b = lm(pose, e[1], tmpB) ?: continue
+            val a = lm(buf, e[0], tmpA) ?: continue
+            val b = lm(buf, e[1], tmpB) ?: continue
             linePts[edge] = a[0]; linePts[edge + 1] = a[1]
             linePts[edge + 2] = b[0]; linePts[edge + 3] = b[1]
             edge += 4
         }
         if (edge > 0) canvas.drawLines(linePts, 0, edge, skeletonPaint)
 
-        for (l in pose.getAllPoseLandmarks()) {
-            if (l.inFrameLikelihood < DISPLAY_VISIBILITY) continue
-            val p = mapTo(l.position.x, l.position.y, tmpP)
+        for (i in 0 until 33) {
+            val idx = i * 4
+            if (buf[idx + 3] < DISPLAY_VISIBILITY) continue
+            val p = mapTo(buf[idx], buf[idx + 1], tmpP)
             canvas.drawCircle(p[0], p[1], 7f, jointPaint)
         }
     }
 
     /** Guide de placement : hauteur du tronc (spec, distance 2.0-2.2 m). */
-    private fun drawPlacementGuide(canvas: Canvas, pose: Pose) {
-        val s = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
-        val d = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
-        val lh = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
-        val rh = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
-        if (s == null || d == null || lh == null || rh == null) return
+    private fun drawPlacementGuide(canvas: Canvas, buf: FloatArray) {
+        val sIdx = PoseLandmark.LEFT_SHOULDER * 4
+        val dIdx = PoseLandmark.RIGHT_SHOULDER * 4
+        val lhIdx = PoseLandmark.LEFT_HIP * 4
+        val rhIdx = PoseLandmark.RIGHT_HIP * 4
+        if (buf[sIdx + 3] < DISPLAY_VISIBILITY || buf[dIdx + 3] < DISPLAY_VISIBILITY ||
+            buf[lhIdx + 3] < DISPLAY_VISIBILITY || buf[rhIdx + 3] < DISPLAY_VISIBILITY
+        ) return
 
-        val shoulderY = (s.position.y + d.position.y) / 2f
-        val hipY = (lh.position.y + rh.position.y) / 2f
+        val shoulderY = (buf[sIdx + 1] + buf[dIdx + 1]) / 2f
+        val hipY = (buf[lhIdx + 1] + buf[rhIdx + 1]) / 2f
         val troncPx = Math.abs(shoulderY - hipY)
         val troncFrac = troncPx / imageH
 
