@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "description": "Seuils de détection des 6 gestes (spec docs/gesture-spec.md v1.0). Modifier ici pour playtest, jamais dans le code. Toutes les distances en unite = distance epaule-hanche (tronc), scale-invariant.",
+  "common": {
+    "cooldownMs": 250,
+    "minLikelihood": 0.5,
+    "fpsTarget": 20
+  },
+  "jab": {
+    "startExt": 0.6,
+    "triggerExt": 0.95,
+    "triggerSpeedUnitsPerSec": 2.5,
+    "resetExt": 0.65
+  },
+  "hook": {
+    "startRotDeg": 8.0,
+    "triggerRotDeg": 25.0,
+    "maxElbowDeg": 100.0,
+    "triggerSpeedUnitsPerSec": 1.8,
+    "resetRotDeg": 10.0
+  },
+  "uppercut": {
+    "hipDropStart": 0.1,
+    "riseDistance": 0.4,
+    "riseMaxSeconds": 0.5,
+    "maxElbowDeg": 120.0
+  },
+  "duck": {
+    "triggerDepth": 0.15,
+    "holdMinMs": 250,
+    "holdMaxMs": 400,
+    "degradedValue": 0.5
+  },
+  "dodge": {
+    "startDisp": 0.05,
+    "triggerDisp": 0.2,
+    "triggerMaxSeconds": 0.6,
+    "resetDisp": 0.1
+  },
+  "guard": {
+    "holdMs": 500,
+    "maxWristWidth": 0.5
+  },
+  "conflicts": {
+    "hookVsDodgeMs": 300
+  }
+}

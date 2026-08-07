@@ -79,7 +79,21 @@ interface PoseSource {
  * Analyseur CameraX -> ML Kit Pose Detection (BlazePose 33 points, STREAM_MODE).
  * Mesure la latence de chaque inference et pousse le résultat vers l'overlay.
  */
-class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyzer, PoseSource {
+class PoseAnalyzer(
+    private val overlay: PoseOverlayView,
+    context: android.content.Context,
+) : ImageAnalysis.Analyzer, PoseSource {
+
+    /** Détection des 6 gestes de combat sur les landmarks filtrés (spec gesture-spec.md). */
+    private val gestureDetector = GestureDetector(context) { ev ->
+        Log.i(
+            "PoseGesture",
+            "TRIGGER ${ev.name}" +
+                (ev.side?.let { "_$it" } ?: "") +
+                (ev.direction?.let { "_$it" } ?: "") +
+                " ${ev.signals}"
+        )
+    }
 
     private val detector: PoseDetector = PoseDetection.getClient(
         when (POSE_MODEL) {
@@ -174,6 +188,12 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                 // référence sur le main thread (pas de course d'écriture).
                 val landmarkBuf = FloatArray(33 * 4)
                 fillLandmarkBuf(pose, landmarkBuf, displayW, displayH, startNs / 1e9)
+                if (landmarkBuf[3] >= 0f) {
+                    // Détection des gestes sur le buffer FILTRÉ (anti-saccades déjà appliqué)
+                    gestureDetector.process(landmarkBuf, startNs / 1e9)
+                } else {
+                    gestureDetector.resetAll()
+                }
                 if (frameCount % 60 == 0) {
                     Log.i(
                         "PosePerf",
