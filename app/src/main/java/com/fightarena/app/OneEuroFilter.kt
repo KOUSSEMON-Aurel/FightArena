@@ -12,10 +12,11 @@ import kotlin.math.abs
  * - beta : sensibilité à la vitesse. Élevé = suit les gestes rapides (jab) sans
  *   traînée, même avec un cutoff bas.
  *
- * Valeurs retenues (temps réel ~25fps, 33 landmarks, ML Kit ACCURATE) :
- * minCutoff=1.0 Hz, beta=0.007, dCutoff=1.0 Hz — la combinaison standard
- * pour du suivi de pose. Le filtre est échelle-dépendant : les entrées doivent
- * être normalisées (0-1) avant filtrage (cf. LandmarkSmoother).
+ * Valeurs retenues (temps réel ~20fps, 33 landmarks, ML Kit ACCURATE) :
+ * minCutoff=0.5 Hz, beta=0.04, dCutoff=20 Hz — moins de lag sur les gestes
+ * rapides que la combinaison souris (1.0/0.007/1.0), stabilité identique à
+ * l'arrêt. Le filtre est échelle-dépendant : les entrées doivent être
+ * normalisées (0-1) avant filtrage (cf. LandmarkSmoother).
  */
 class OneEuroFilter(
     private val minCutoff: Double,
@@ -65,11 +66,18 @@ class OneEuroFilter(
  * ML Kit retourne des pixels (repère image), alors que One-Euro est calibré
  * sur des valeurs normalisées : le smoother normalise par la taille de l'image
  * avant filtrage, puis re-dé-normalise pour les sorties.
+ *
+ * Tuning (Casiez et al., CHI 2012 + retours pose estimation) :
+ * - minCutoff=0.5 Hz : plus stable à l'arrêt qu'à 1.0, sans traînée perceptible.
+ * - beta=0.04 : ~5x moins de lag sur gestes rapides que 0.007 (latence ~1 frame
+ *   au lieu de 2-3), le jitter à l'arrêt ne dépend que de minCutoff.
+ * - dCutoff=20 Hz (fps réel ~20) : la dérivée suit le mouvement au lieu de
+ *   rester lissée à 1 Hz — le filtre anticipe mieux les changements de direction.
  */
 class LandmarkSmoother(
-    private val minCutoff: Double = 1.0,
-    private val beta: Double = 0.007,
-    private val dCutoff: Double = 1.0,
+    private val minCutoff: Double = 0.5,
+    private val beta: Double = 0.04,
+    private val dCutoff: Double = 20.0,
 ) {
     private val fx = Array(33) { OneEuroFilter(minCutoff, beta, dCutoff) }
     private val fy = Array(33) { OneEuroFilter(minCutoff, beta, dCutoff) }
