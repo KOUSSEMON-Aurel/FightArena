@@ -96,7 +96,7 @@ class PoseOverlayView @JvmOverloads constructor(
 
     /**
      * Résultat MediaPipe Tasks : 33 points [x_px, y_px, visibility] dans le repère
-     * image redresse (même convention que ML Kit). Liste vide = aucune pose.
+     * image redressé (même convention que ML Kit). Liste vide = aucune pose.
      */
     fun onMediaPipePose(
         pts: List<FloatArray>,

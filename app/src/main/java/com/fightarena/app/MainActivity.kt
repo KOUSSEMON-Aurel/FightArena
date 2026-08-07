@@ -55,9 +55,9 @@ class MainActivity : ComponentActivity() {
         val videoTest = intent.getStringExtra("video_test")
         if (videoTest != null) {
             overlay.mirrored = false  // les frames vidéo sont déjà dans le repère écran
-            // A/B modèle : --es model lite (lite CPU rapide) ; --es force_cpu 1
-            // (pas de swap GPU, mesure CPU pur)
-            val testModel = intent.getStringExtra("model") ?: "full"
+            // A/B modèle : --es model full (full CPU lent) ; --es force_cpu 1
+            // (pas de swap GPU, mesure CPU pur). Défaut : lite (rapide).
+            val testModel = intent.getStringExtra("model") ?: "lite"
             forceCpu = intent.getBooleanExtra("force_cpu", false)
             mediaPipeAnalyzer = MediaPipePoseAnalyzer(overlay, testModel, forceCpu)
             startVideoTest(videoTest)

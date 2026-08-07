@@ -8,8 +8,12 @@ import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.MPImage
+import com.google.mediapipe.framework.image.MediaImageBuilder
+import com.google.mediapipe.tasks.components.containers.Landmark
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
+import com.google.mediapipe.tasks.vision.core.ImageProcessingOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
@@ -35,7 +39,7 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
  */
 class MediaPipePoseAnalyzer(
     private val overlay: PoseOverlayView,
-    private val model: String = "full",
+    private val model: String = "lite",
     private val forceCpu: Boolean = false,
 ) :
     ImageAnalysis.Analyzer, PoseSource {
@@ -62,7 +66,7 @@ class MediaPipePoseAnalyzer(
     // true  -> init CPU uniquement, pas de swap GPU, pas de watchdog GPU
     // false -> comportement normal : CPU eager puis swap GPU en arrière-plan
     private val FORCE_CPU_ABTEST: Boolean
-    // Modèle cible : "full" (pose_landmarker_full.task) ou "lite" (lite.task).
+    // Modèle cible : "lite" (pose_landmarker_lite.task, défaut) ou "full".
     // Le CPU eager utilise TOUJOURS le lite (~2x plus rapide) : c'est le warm-up
     // pendant l'init GPU (~12s de shaders). Le swap final utilise modelName.
     private val modelName: String
@@ -82,12 +86,19 @@ class MediaPipePoseAnalyzer(
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumPoses(1)
                 .setMinPoseDetectionConfidence(0.5f)
-                .setMinPosePresenceConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                .setMinPosePresenceConfidence(0.3f)
+                .setMinTrackingConfidence(0.3f)
                 .setResultListener { result: PoseLandmarkerResult, _ ->
+                    // Libère toujours le backpressure, même si le résultat vient
+                    // d'un analyseur périmé (génération mismatch après swap GPU) :
+                    // sinon detectionInFlight reste vrai à vie et plus rien ne passe.
+                    detectionInFlight = false
                     if (generation == gen) onResult(result)
                 }
-                .setErrorListener { e -> Log.e("MediaPipeAnalyzer", "live stream error", e) }
+                .setErrorListener { e ->
+                    detectionInFlight = false
+                    Log.e("MediaPipeAnalyzer", "live stream error", e)
+                }
                 .build()
             return PoseLandmarker.createFromOptions(overlay.context.applicationContext, options)
         }
@@ -189,6 +200,7 @@ class MediaPipePoseAnalyzer(
     private var pendingImageW = 1
     private var pendingImageH = 1
     private var callCount = 0
+    private var droppedCount = 0
     private var cycMs = 0f
     private var copyMs = 0f
     private var detMs = 0f
@@ -198,6 +210,10 @@ class MediaPipePoseAnalyzer(
 
     /** Mode vidéo de test : appelé une fois par résultat traité (frame consommée). */
     @Volatile var frameDone: (() -> Unit)? = null
+
+    /** Backpressure : true tant que detectAsync n'a pas retourné son résultat.
+     *  Évite l'accumulation dans la file LIVE_STREAM (lag croissant vidéo/points). */
+    @Volatile private var detectionInFlight = false
 
     // ── Debug one-shot (premier frame + dump PNG) ───────────────────────────
     private var debugLogged = false
@@ -230,6 +246,18 @@ class MediaPipePoseAnalyzer(
         }
         lastAnalyzeNs = System.nanoTime()
 
+        // BACKPRESSURE : si la détection précédente n'est pas encore revenue,
+        // on drop la frame (close + return). Sans ça, detectAsync (non bloquant)
+        // + CameraX KEEP_ONLY_LATEST empilent les frames dans la file interne de
+        // MediaPipe : la latence grossit à chaque frame (calls >> frames) et
+        // l'affichage décroche de la vidéo. ML Kit était synchrone donc jamais
+        // de backlog ; on recrée ce comportement ici.
+        if (detectionInFlight) {
+            droppedCount++
+            imageProxy.close()
+            return
+        }
+
         val image = imageProxy.image ?: run { imageProxy.close(); return }
         val rotation = imageProxy.imageInfo.rotationDegrees
 
@@ -240,58 +268,71 @@ class MediaPipePoseAnalyzer(
             debugLogged = true
         }
 
-        // 1. Conversion RGBA native rapide vers Bitmap sans boucle Kotlin
         val w = image.width
         val h = image.height
-        val buf = buffer ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { buffer = it }
-        try {
-            val copyStart = System.nanoTime()
-            image.planes[0].buffer.rewind()
-            buf.copyPixelsFromBuffer(image.planes[0].buffer)
-            copyMs = 0.9f * copyMs + 0.1f * ((System.nanoTime() - copyStart) / 1e6f)
+
+        // Chemin ML Kit : on passe le MediaImage YUV natif directement à
+        // MediaPipe (MediaImageBuilder = zéro copie bitmap, zéro conversion
+        // RGBA CPU). La rotation est appliquée en interne par le pipeline GPU
+        // via ImageProcessingOptions ; les landmarks sortent donc dans le
+        // repère REDRESSE -> pendingImageW/H = w/h redressés (cf processBitmap).
+        val mpImage = try {
+            MediaImageBuilder(image).build()
         } catch (e: Exception) {
-            Log.e("MediaPipeAnalyzer", "copy error", e)
+            Log.e("MediaPipeAnalyzer", "MediaImageBuilder error", e)
             imageProxy.close()
             return
         }
-        imageProxy.close()
 
-        processBitmap(buf, w, h, rotation)
+        // detectAsync consomme l'image de façon synchrone : le proxy ne doit
+        // être fermé qu'APRÈS l'appel (sinon "Image is already closed").
+        processBitmap(mpImage, w, h, rotation)
+        imageProxy.close()
         cycMs = 0.9f * cycMs + 0.1f * ((System.nanoTime() - cycStart) / 1e6f)
     }
 
     /**
-     * Rotation Canvas (Skia) + détection async — utilisé par la caméra ET le
-     * mode vidéo de test. Le modèle reçoit l'image redressée : les landmarks
-     * sortent dans le repère PORTRAIT (pixels), comme l'ancien ML Kit, et
-     * l'overlay mappe correctement. Pas d'ImageProcessingOptions
-     * (setRotationDegrees retournait les points dans un repère différent -> désordre).
+     * Mode vidéo de test : convertit le Bitmap en MPImage puis délègue au
+     * chemin commun (rotation=0 : les frames de test sont déjà upright).
      */
     fun processBitmap(src: Bitmap, srcW: Int, srcH: Int, rotation: Int) {
+        processBitmap(BitmapImageBuilder(src).build(), srcW, srcH, rotation)
+    }
+
+    /**
+     * Détection async — reçoit un MPImage (YUV natif caméra via MediaImageBuilder,
+     * ou Bitmap via BitmapImageBuilder pour le mode vidéo de test). La rotation
+     * est déléguée à MediaPipe (ImageProcessingOptions) : le pipeline GPU tourne
+     * l'image en interne, zéro copie Canvas CPU. L'image envoyée est la source
+     * brute (non redressée) : les landmarks sortent dans le repère REDRESSE ->
+     * pendingImageW/H = w/h redressés, l'overlay mappe comme avant.
+     */
+    fun processBitmap(mpImage: MPImage, srcW: Int, srcH: Int, rotation: Int) {
         val isRotated = rotation % 180 != 0
         val rw = if (isRotated) srcH else srcW
         val rh = if (isRotated) srcW else srcH
-        val mpBmp: Bitmap
-        if (rotation != 0) {
-            val rot = rotBmp ?: Bitmap.createBitmap(rw, rh, Bitmap.Config.ARGB_8888).also { rotBmp = it }
-            rotateMatrix.setRotate(rotation.toFloat(), srcW / 2f, srcH / 2f)
-            rotateMatrix.postTranslate((rw - srcW) / 2f, (rh - srcH) / 2f)
-            Canvas(rot).drawBitmap(src, rotateMatrix, null)
-            mpBmp = rot
-        } else {
-            mpBmp = src
-        }
         pendingImageW = rw
         pendingImageH = rh
 
         lastStartNs = System.nanoTime()
         val detStart = System.nanoTime()
         try {
-            poseLandmarker.detectAsync(
-                BitmapImageBuilder(mpBmp).build(),
-                SystemClock.uptimeMillis()
-            )
+            detectionInFlight = true
+            if (rotation != 0) {
+                // CameraX : rotation horaire pour redresse (270). MediaPipe :
+                // rotationDegrees antihoraire -> il faut inverser le sens
+                // ((360-rot)%360). Sans ça, image tournée de 180° -> squelette
+                // à l'envers / points désorganisés.
+                val mpRot = (360 - rotation) % 360
+                val opts = ImageProcessingOptions.builder()
+                    .setRotationDegrees(mpRot)
+                    .build()
+                poseLandmarker.detectAsync(mpImage, opts, SystemClock.uptimeMillis())
+            } else {
+                poseLandmarker.detectAsync(mpImage, SystemClock.uptimeMillis())
+            }
         } catch (e: Exception) {
+            detectionInFlight = false
             Log.e("MediaPipeAnalyzer", "detectAsync error", e)
         }
         detMs = 0.9f * detMs + 0.1f * ((System.nanoTime() - detStart) / 1e6f)
@@ -307,6 +348,7 @@ class MediaPipePoseAnalyzer(
 
     // ── Résultat async ─────────────────────────────────────────────────────
     private fun onResult(result: PoseLandmarkerResult) {
+        detectionInFlight = false
         val latencyMs = (System.nanoTime() - lastStartNs) / 1e6f
         frameCount++
         stats.record(latencyMs)
@@ -314,6 +356,7 @@ class MediaPipePoseAnalyzer(
         maybeWatchdog()
 
         val landmarks = result.landmarks().firstOrNull().orEmpty()
+        val worldLms = result.worldLandmarks().firstOrNull().orEmpty()
         if (landmarks.isEmpty()) {
             emptyCount++
             if (emptyCount == 1 || emptyCount % 60 == 0) {
@@ -357,10 +400,40 @@ class MediaPipePoseAnalyzer(
                 "p95=${"%.1f".format(stats.p95())}ms max=${"%.1f".format(stats.max())}ms " +
                 "cyc=${"%.1f".format(cycMs)}ms gap=${"%.1f".format(gapMs)}ms " +
                 "copy=${"%.1f".format(copyMs)}ms det=${"%.1f".format(detMs)}ms " +
-                "lm=${landmarks.size} empty=$emptyCount delegate=$delegateUsed engine=mediapipe"
+                "lm=${landmarks.size} empty=$emptyCount drop=$droppedCount " +
+                "delegate=$delegateUsed engine=mediapipe " +
+                "world3d=${worldMetrics(worldLms)}"
             Log.i("PosePerf", msg)
             debugLine(msg)
         }
+    }
+
+    /**
+     * Métriques 3D réelles (mètres) extraites des worldLandmarks : hauteur
+     * debout (sommet crâne - sol), largeur épaules, longueur tronc,
+     * envergure bras et profondeur max (z). C'est la preuve chiffrée que la
+     * 3D monde est vivante — ML Kit ne pouvait donner aucun de ces nombres.
+     */
+    private fun worldMetrics(worldLms: List<Landmark>): String {
+        if (worldLms.isEmpty()) return "none"
+        fun d(a: Int, b: Int): Float {
+            val pa = worldLms[a]; val pb = worldLms[b]
+            val dx = pa.x() - pb.x(); val dy = pa.y() - pb.y(); val dz = pa.z() - pb.z()
+            return kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+        }
+        val shoulderW = d(11, 12)
+        val hipW = d(23, 24)
+        val trunk = (d(11, 23) + d(12, 24)) / 2f
+        val reach = (d(0, 15) + d(0, 16)) / 2f
+        val headToHip = (d(0, 23) + d(0, 24)) / 2f
+        var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        for (wl in worldLms) {
+            if (wl.z() < minZ) minZ = wl.z()
+            if (wl.z() > maxZ) maxZ = wl.z()
+        }
+        return "sh=${"%.2f".format(shoulderW)}m hip=${"%.2f".format(hipW)}m " +
+            "trunk=${"%.2f".format(trunk)}m reach=${"%.2f".format(reach)}m " +
+            "height=${"%.2f".format(headToHip * 2)}m depth=${"%.2f".format(maxZ - minZ)}m"
     }
 
     private fun updateFps() {
