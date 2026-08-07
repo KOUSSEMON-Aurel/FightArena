@@ -7,6 +7,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.PoseDetector
+import com.google.mlkit.vision.pose.PoseLandmark
+import com.google.mlkit.vision.pose.PoseDetectorOptionsBase
+import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import kotlin.math.min
 
@@ -21,12 +24,6 @@ class LatencyStats(private val windowSize: Int = 240) {
         samples[head] = ms
         head = (head + 1) % windowSize
         if (n < windowSize) n++
-    }
-
-    /** Vide la fenêtre : la moyenne repart de zéro (utilisé au swap CPU -> GPU). */
-    fun reset() {
-        head = 0
-        n = 0
     }
 
     fun avg(): Float {
@@ -51,7 +48,22 @@ class LatencyStats(private val windowSize: Int = 240) {
     }
 }
 
-/** Source de pose commune aux analyseurs (ML Kit ou MediaPipe Tasks) pour l'overlay. */
+/**
+ * Modèle de détection de pose utilisé par l'app.
+ *
+ * Le modèle ACCURATE (BlazePose full, 256x256) est plus stable sur les coordonnées
+ * x/y (angles coude/épaule fiables pour la spec) mais plus lent ; le modèle BASE
+ * (lite, 192x192) est embarqué aussi pour permettre une comparaison ultérieure
+ * (perf vs stabilité) par simple changement de constante.
+ */
+enum class PoseModel(val label: String) {
+    ACCURATE("full"),
+    BASE("lite")
+}
+
+private val POSE_MODEL: PoseModel = PoseModel.ACCURATE
+
+/** Source de résultats de pose : fournit les stats et le compteur pour le HUD. */
 interface PoseSource {
     val stats: LatencyStats
     val frameCount: Int
@@ -64,12 +76,18 @@ interface PoseSource {
 class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyzer, PoseSource {
 
     private val detector: PoseDetector = PoseDetection.getClient(
-        PoseDetectorOptions.Builder()
-            .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
-            // CPU forcé : pas de mini-benchmark d'accélération (crashe en natif sur
-            // certains SoC) et comportement stable et prévisible sur tous les téléphones.
-            .setPreferredHardwareConfigs(PoseDetectorOptions.CPU)
-            .build()
+        when (POSE_MODEL) {
+            PoseModel.ACCURATE -> AccuratePoseDetectorOptions.Builder()
+                .setDetectorMode(PoseDetectorOptionsBase.STREAM_MODE)
+                .setPreferredHardwareConfigs(PoseDetectorOptionsBase.CPU)
+                .build()
+            PoseModel.BASE -> PoseDetectorOptions.Builder()
+                .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
+                // CPU forcé : pas de mini-benchmark d'accélération (crashe en natif sur
+                // certains SoC) et comportement stable et prévisible sur tous les téléphones.
+                .setPreferredHardwareConfigs(PoseDetectorOptions.CPU)
+                .build()
+        }
     )
 
     override val stats = LatencyStats(240)
@@ -104,7 +122,7 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                         "frames=$frameCount fps=${"%.1f".format(fps)} " +
                             "infer_avg=${"%.1f".format(stats.avg())}ms " +
                             "p95=${"%.1f".format(stats.p95())}ms max=${"%.1f".format(stats.max())}ms " +
-                            "tensors_none"
+                            "world3d=${world3dSummary(pose)}"
                     )
                 }
                 overlay.onPose(pose, latencyMs, displayW, displayH, this)
@@ -114,6 +132,26 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
                 Log.e("PoseAnalyzer", "pose detection failed", e)
                 imageProxy.close()
             }
+    }
+
+    /**
+     * Résumé 3D relatif (ML Kit : profondeur z en pixels, relative à l'image ;
+     * worldLandmarks en mètres approximatifs normalisés sur la hauteur estimée).
+     * Retourne "hipX,hipY,hipZ shX,shY,shZ" ou "none" si invisibles.
+     */
+    private fun world3dSummary(pose: Pose): String {
+        val hip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP) ?: return "none"
+        val shoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER) ?: return "none"
+        val all = pose.getAllPoseLandmarks()
+        if (all.isEmpty()) return "none"
+        val hipZ = all[PoseLandmark.LEFT_HIP].position3D.z
+        val shZ = all[PoseLandmark.LEFT_SHOULDER].position3D.z
+        val hipY = all[PoseLandmark.LEFT_HIP].position3D.y
+        val shY = all[PoseLandmark.LEFT_SHOULDER].position3D.y
+        val depthFrac = (hipZ - shZ) / (hipY - shY).let { if (it == 0f) 1f else it }
+        return "hip=${"%.0f,%.0f,%.0f".format(hip.position3D.x, hipY, hipZ)} " +
+            "sh=${"%.0f,%.0f,%.0f".format(shoulder.position3D.x, shY, shZ)} " +
+            "depth_slope=${"%.2f".format(depthFrac)}"
     }
 
     private fun updateFps() {
