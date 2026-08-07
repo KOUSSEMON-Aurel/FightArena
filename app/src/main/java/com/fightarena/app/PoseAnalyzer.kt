@@ -79,13 +79,12 @@ class PoseAnalyzer(private val overlay: PoseOverlayView) : ImageAnalysis.Analyze
         when (POSE_MODEL) {
             PoseModel.ACCURATE -> AccuratePoseDetectorOptions.Builder()
                 .setDetectorMode(PoseDetectorOptionsBase.STREAM_MODE)
-                .setPreferredHardwareConfigs(PoseDetectorOptionsBase.CPU)
+                .setPreferredHardwareConfigs(PoseDetectorOptionsBase.CPU_GPU)
                 .build()
             PoseModel.BASE -> PoseDetectorOptions.Builder()
                 .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
-                // CPU forcé : pas de mini-benchmark d'accélération (crashe en natif sur
-                // certains SoC) et comportement stable et prévisible sur tous les téléphones.
-                .setPreferredHardwareConfigs(PoseDetectorOptions.CPU)
+                // CPU_GPU : GPU OpenCL si dispo (fallback CPU automatique de ML Kit).
+                .setPreferredHardwareConfigs(PoseDetectorOptionsBase.CPU_GPU)
                 .build()
         }
     )
