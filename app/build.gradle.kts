@@ -15,6 +15,13 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+        val variant = (project.findProperty("variant") as String?)?.takeIf { it.isNotBlank() }
+        if (variant != null) {
+            applicationIdSuffix = ".v$variant"
+            manifestPlaceholders["appLabel"] = "FightArena v$variant"
+        } else {
+            manifestPlaceholders["appLabel"] = "FightArena"
+        }
     }
 
     buildTypes {

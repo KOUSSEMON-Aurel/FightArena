@@ -1,6 +1,7 @@
 package com.fightarena.app
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONObject
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -134,6 +135,9 @@ class GestureDetector(context: Context, private val listener: (GestureEvent) -> 
     private var hipRefX = Float.NaN
     private var hipRefY = Float.NaN
 
+    private var lastDiagT = -1.0
+    private var prevWristR = 0f
+
     private val jabL = State(); private val jabR = State()
     private val hookL = State(); private val hookR = State()
     private val upL = State(); private val upR = State()
@@ -167,6 +171,29 @@ class GestureDetector(context: Context, private val listener: (GestureEvent) -> 
         updateDuck(t)
         updateDodge(t)
         updateGuard(t)
+        diagLog(t)
+    }
+
+    /** Log périodique (1/s, force le diagnostic même au repos) de toutes les
+     *  métriques utiles pour débusquer les TRIGGERs fantômes. */
+    private fun diagLog(t: Double) {
+        if (t - lastDiagT < 1.0) return
+        lastDiagT = t
+        val f = frame
+        val extL = dist(f.x[13], f.y[13], f.x[15], f.y[15]) / f.trunk
+        val extR = dist(f.x[14], f.y[14], f.x[16], f.y[16]) / f.trunk
+        val vlat = abs(f.x[16] - prevWristR) / maxOf(f.dt.toFloat(), 1e-3f) / f.shoulderW
+        prevWristR = f.x[16]
+        val drop = (f.midHy - hipRefY) / f.trunk
+        val depth = (f.noseY - f.midSy) / f.trunk
+        Log.i(
+            "PoseGesture",
+            "DIAG trunk=%.0f rot=%.0f elb=%.0f vlat=%.1f extL=%.2f extR=%.2f drop=%.2f depth=%.2f stable=%b likW=%.2f".format(
+                f.trunk, f.shoulderRotDeg, elbowDeg(12, 14, 16), vlat,
+                if (visible(15)) extL else -1f, if (visible(16)) extR else -1f,
+                if (hipRefY.isNaN()) 0f else drop, depth, f.valid, f.lik[12]
+            )
+        )
     }
 
     /** Reset complet (personne hors cadre) : toutes les machines repartent à zéro. */
@@ -207,8 +234,11 @@ class GestureDetector(context: Context, private val listener: (GestureEvent) -> 
         f.trunk = dist(f.midSx, f.midSy, f.midHx, f.midHy)
         f.shoulderW = dist(sL, sLy, sR, sRy)
         if (f.trunk < 1f) return
-        // Inclinaison de la ligne épaules vs horizontale caméra (hook)
-        f.shoulderRotDeg = (abs(atan2((sRy - sLy).toDouble(), (sR - sL).toDouble())) * 180.0 / PI).toFloat()
+        // Inclinaison de la ligne épaules vs horizontale (hook, spec §3.2) :
+        // angle ABSOLU 0-90°, indépendant du sens (caméra frontale miroir).
+        val rawDeg = (Math.atan2((sRy - sLy).toDouble(), (sR - sL).toDouble()) * 180.0 / PI).toFloat()
+        val tilt = abs(rawDeg)
+        f.shoulderRotDeg = if (tilt > 90f) 180f - tilt else tilt
         f.valid = true
     }
 
