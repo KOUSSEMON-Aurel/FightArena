@@ -1,6 +1,6 @@
 {
-  "version": 4.2,
-  "description": "Seuils de detection des 6 gestes (spec docs/gesture-spec.md v1.0). Modifier ici pour playtest, jamais dans le code. Toutes les distances en unite = distance epaule-hanche (tronc), scale-invariant. v4 : stabilite par fenetre glissante locale (les references EMA se figeaient et bloquaient tout), z ML Kit retire du jab (bruit documente), hook par compression des epaules (rotation de face), duck par raccourcissement du tronc (s'asseoir ne raccourcit pas le tronc), uppercut sans hipDrop EMA. v4.2 : cooldown par canal (bras gauche/droit independants), anti double-trigger uppercut (retour en garde >= resetHoldMs avant re-armement, base tenue >= baseHoldMs avant montee).",
+  "version": 4.5,
+  "description": "Seuils de detection des 6 gestes (spec docs/gesture-spec.md v1.0). Modifier ici pour playtest, jamais dans le code. Toutes les distances en unite = distance epaule-hanche (tronc), scale-invariant. v4.5 : seuils resynchronises avec la spec v1.0 (les seuils abbaises declenchaient au repos avec le bruit mobile : rot 13-25 deg, elb 65).",
   "common": {
     "cooldownMs": 250,
     "minLikelihood": 0.5,
@@ -13,22 +13,22 @@
   },
   "jab": {
     "startExt": 0.65,
-    "triggerExt": 0.85,
-    "triggerSpeedUnitsPerSec": 1.8,
+    "triggerExt": 0.95,
+    "triggerSpeedUnitsPerSec": 2.5,
     "ampRequired": 0.35,
-    "resetExt": 0.7
+    "resetExt": 0.65
   },
   "hook": {
-    "startRotDeg": 6.0,
-    "triggerRotDeg": 12.0,
-    "maxElbowDeg": 110.0,
-    "triggerSpeedUnitsPerSec": 1.5,
+    "startRotDeg": 8.0,
+    "triggerRotDeg": 25.0,
+    "maxElbowDeg": 100.0,
+    "triggerSpeedUnitsPerSec": 1.8,
     "ampRequiredDeg": 8.0,
-    "resetRotDeg": 6.0
+    "resetRotDeg": 10.0
   },
   "uppercut": {
-    "riseDistance": 0.3,
-    "riseMaxSeconds": 0.6,
+    "riseDistance": 0.4,
+    "riseMaxSeconds": 0.5,
     "maxElbowDeg": 120.0,
     "elbowRise": 0.08,
     "maxWristLateral": 0.25,
@@ -36,7 +36,7 @@
     "resetHoldMs": 150
   },
   "duck": {
-    "triggerDepth": 0.1,
+    "triggerDepth": 0.15,
     "holdMinMs": 250,
     "holdMaxMs": 400,
     "trunkDrop": 0.05,

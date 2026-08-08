@@ -89,7 +89,7 @@ class GestureDetectorTest {
                 neutral.buf(),
                 neutral.buf(),
                 P(shR = 440f to 460f, elR = 450f to 470f, wrR = 480f to 440f).buf(), // rot 14 -> START
-                P(shR = 440f to 450f, elR = 455f to 475f, wrR = 505f to 430f).buf(), // rot 17, vlat 3.0 -> TRIGGER
+                P(shR = 440f to 425f, elR = 455f to 475f, wrR = 505f to 430f).buf(), // rot 25, elb 83, vlat 3.1 -> TRIGGER
             )
         )
         assertEquals(listOf("hook_right"), names(ev))
@@ -101,8 +101,8 @@ class GestureDetectorTest {
             listOf(
                 neutral.buf(),
                 neutral.buf(),
-                P(shL = 300f to 500f, shR = 420f to 500f, elR = 400f to 520f, wrR = 390f to 500f).buf(),
-                P(shL = 315f to 500f, shR = 405f to 500f, elR = 400f to 520f, wrR = 380f to 500f).buf(),
+                P(shL = 300f to 500f, shR = 415f to 500f, elR = 395f to 520f, wrR = 390f to 470f).buf(),
+                P(shL = 305f to 500f, shR = 410f to 500f, elR = 400f to 520f, wrR = 370f to 460f).buf(),
             )
         )
         assertEquals(listOf("hook_right"), names(ev))
@@ -169,7 +169,7 @@ class GestureDetectorTest {
         // Inquiétude validée : le squat+uppercut du vrai combat. Les machines duck
         // et jab sont indépendantes : le duck (nez sous les épaules + tronc plié)
         // pendant l'extension du bras ne doit bloquer ni l'un ni l'autre.
-        val ducked = P(noseY = 560f, shL = 280f to 540f, shR = 440f to 540f)
+        val ducked = P(noseY = 575f, shL = 280f to 540f, shR = 440f to 540f) // depth = 35/135 = 0.26 >= 0.15
         val ev = run(
             listOf(
                 neutral.buf(),
@@ -190,7 +190,7 @@ class GestureDetectorTest {
 
     @Test
     fun `duck - nez sous les epaules + tronc raccourci maintenu`() {
-        val ducked = P(noseY = 560f, shL = 280f to 540f, shR = 440f to 540f) // tronc 200 -> 160
+        val ducked = P(noseY = 575f, shL = 280f to 540f, shR = 440f to 540f) // tronc 200 -> 160
         val poses = mutableListOf<FloatArray>()
         poses += neutral.buf()
         poses += neutral.buf()
@@ -230,7 +230,7 @@ class GestureDetectorTest {
 
     @Test
     fun `tous les gestes en sequence sur un seul detecteur`() {
-        val ducked = P(noseY = 560f, shL = 280f to 540f, shR = 440f to 540f)
+        val ducked = P(noseY = 575f, shL = 280f to 540f, shR = 440f to 540f)
         val guard = P(wrL = 330f to 430f, wrR = 390f to 430f)
         val poses = mutableListOf<FloatArray>()
         // jab (fold poignet au-dessus du coude : n'arme pas l'uppercut)
@@ -242,7 +242,7 @@ class GestureDetectorTest {
         repeat(8) { poses += neutral.buf() }
         // hook (2 frames de rotation)
         poses += P(shR = 440f to 460f, elR = 450f to 470f, wrR = 480f to 440f).buf()
-        poses += P(shR = 440f to 450f, elR = 455f to 475f, wrR = 505f to 430f).buf() // TRIGGER hook
+        poses += P(shR = 440f to 425f, elR = 455f to 475f, wrR = 505f to 430f).buf() // rot 25, elb 83, vlat 3.1 -> TRIGGER hook
         repeat(8) { poses += neutral.buf() }
         // uppercut (après, remonter la main pour reset TRIGGERED)
         poses += P(elR = 450f to 600f, wrR = 440f to 650f).buf()

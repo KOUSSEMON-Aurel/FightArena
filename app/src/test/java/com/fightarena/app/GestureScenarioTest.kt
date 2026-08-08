@@ -160,11 +160,11 @@ class GestureScenarioTest {
         val poses = listOf(
             neutral.buf(),
             neutral.buf(),
-            // Hook frame 1 (rotation 14°) + bassin décalé de +40 px d'un coup
-            P(shR = 440f to 460f, elR = 450f to 470f, wrR = 480f to 440f,
+            // Hook frame 1 (rotation 15.7°) + bassin décalé de +40 px d'un coup
+            P(shR = 440f to 455f, elR = 445f to 470f, wrR = 480f to 485f,
                 hipL = 340f to 700f, hipR = 420f to 700f).buf(),  // t=0.10 hook START + dodge START
-            // Hook frame 2 (rotation 15.7°, coude 90°, vlat) + bassin tenu
-            P(shR = 440f to 450f, elR = 455f to 475f, wrR = 505f to 430f,
+            // Hook frame 2 (rotation 25.3°, coude 83°, vlat 2.5) + bassin tenu
+            P(shR = 440f to 425f, elR = 455f to 475f, wrR = 500f to 455f,
                 hipL = 340f to 700f, hipR = 420f to 700f).buf(),  // t=0.15 -> hook TRIGGER, dodge bloqué
             neutral.buf(),
         )
@@ -209,7 +209,7 @@ class GestureScenarioTest {
         // jab droit pendant le balance (fold -> arm -> trigger)
         poses += extR(0.2f, hipL = 330f to 704f, hipR = 410f to 704f).buf()
         poses += extR(0.8f, hipL = 330f to 696f, hipR = 410f to 696f).buf()
-        poses += extR(0.95f, hipL = 330f to 704f, hipR = 410f to 704f).buf()
+        poses += extR(1.0f, hipL = 330f to 704f, hipR = 410f to 704f).buf()
         poses += neutral.buf()
         assertEquals(listOf("jab_right"), names(run(poses)))
     }
@@ -249,11 +249,11 @@ class GestureScenarioTest {
             extR(0.2f).buf(),                                   // t=0.10 fold
             extR(0.8f).buf(),                                   // t=0.15 START
             extR(0.95f).buf(),                                  // t=0.20 -> TRIGGER jab_right
-            // hook LEFT : rotation ligne épaules 14°, coude < 110°, vlat
-            P(shL = 280f to 462f, shR = 440f to 500f, elL = 270f to 470f,
-                wrL = 240f to 440f).buf(),                      // t=0.25 rot 13.4° -> START
-            P(shL = 280f to 455f, shR = 440f to 500f, elL = 265f to 475f,
-                wrL = 215f to 430f).buf(),                      // t=0.30 rot 15.7° -> TRIGGER hook_left
+            // hook LEFT : rotation ligne épaules 18.9°, coude < 100°, vlat
+            P(shL = 280f to 445f, shR = 440f to 500f, elL = 285f to 445f,
+                wrL = 245f to 430f).buf(),                      // t=0.25 rot 18.9° -> START
+            P(shL = 280f to 425f, shR = 440f to 500f, elL = 275f to 500f,
+                wrL = 215f to 425f).buf(),                      // t=0.30 rot 25.3°, elb 73°, vlat 3.8 -> TRIGGER hook_left
             // uppercut RIGHT : poing bas tenu 2 frames puis montée 100 ms
             P(elR = 450f to 600f, wrR = 440f to 650f).buf(),    // t=0.35 base (poing sous coude)
             P(elR = 450f to 600f, wrR = 440f to 650f).buf(),    // t=0.40 base tenue
@@ -278,10 +278,10 @@ class GestureScenarioTest {
             extR(0.2f).buf(),                         // 0.110 fold
             extR(0.8f).buf(),                         // 0.129 START (amp 0.6)
             extR(0.95f).buf(),                        // 0.157 v=(0.95-0.8)/0.028=5.4 -> jab_right
-            P(shL = 280f to 462f, shR = 440f to 500f, elL = 270f to 470f,
-                wrL = 240f to 440f).buf(),            // 0.231 rot 13.4° -> START
-            P(shL = 280f to 455f, shR = 440f to 500f, elL = 265f to 475f,
-                wrL = 215f to 430f).buf(),            // 0.259 rot 15.7°, vlat 5.4 -> hook_left
+            P(shL = 280f to 445f, shR = 440f to 500f, elL = 285f to 445f,
+                wrL = 245f to 430f).buf(),            // 0.231 rot 18.9° -> START
+            P(shL = 280f to 425f, shR = 440f to 500f, elL = 275f to 500f,
+                wrL = 215f to 425f).buf(),            // 0.259 rot 25.3°, elb 73°, vlat 4.7 -> hook_left
             P(elR = 450f to 600f, wrR = 440f to 650f).buf(),   // 0.307 base
             P(elR = 450f to 600f, wrR = 440f to 650f).buf(),   // 0.341 base tenue
             P(elR = 450f to 565f, wrR = 445f to 560f).buf(),   // 0.445 rise (base 138 ms, cooldown 288 ms) -> uppercut_right
@@ -340,7 +340,7 @@ class GestureScenarioTest {
         // machine verrouille (phase TRIGGERED) tant que le joueur ne se relève
         // pas -> aucun re-trigger pendant les 600 ms de pression. Le verrouillage
         // anti-re-trigger est le comportement voulu (1 impact au lieu de N).
-        val ducked = P(nose = 560f, shL = 280f to 540f, shR = 440f to 540f)
+        val ducked = P(nose = 575f, shL = 280f to 540f, shR = 440f to 540f)
         val poses = mutableListOf<FloatArray>()
         poses += neutral.buf()
         poses += neutral.buf()
