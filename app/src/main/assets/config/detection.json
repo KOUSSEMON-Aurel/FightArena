@@ -1,45 +1,58 @@
 {
-  "version": 1,
-  "description": "Seuils de détection des 6 gestes (spec docs/gesture-spec.md v1.0). Modifier ici pour playtest, jamais dans le code. Toutes les distances en unite = distance epaule-hanche (tronc), scale-invariant.",
+  "version": 4.2,
+  "description": "Seuils de detection des 6 gestes (spec docs/gesture-spec.md v1.0). Modifier ici pour playtest, jamais dans le code. Toutes les distances en unite = distance epaule-hanche (tronc), scale-invariant. v4 : stabilite par fenetre glissante locale (les references EMA se figeaient et bloquaient tout), z ML Kit retire du jab (bruit documente), hook par compression des epaules (rotation de face), duck par raccourcissement du tronc (s'asseoir ne raccourcit pas le tronc), uppercut sans hipDrop EMA. v4.2 : cooldown par canal (bras gauche/droit independants), anti double-trigger uppercut (retour en garde >= resetHoldMs avant re-armement, base tenue >= baseHoldMs avant montee).",
   "common": {
     "cooldownMs": 250,
     "minLikelihood": 0.5,
-    "fpsTarget": 20
+    "strikeMinLikelihood": 0.3,
+    "fpsTarget": 20,
+    "trunkMinFrac": 0.14,
+    "trunkMaxFrac": 0.32,
+    "maxBodyShift": 0.14,
+    "maxLateralShift": 0.2
   },
   "jab": {
-    "startExt": 0.6,
-    "triggerExt": 0.95,
-    "triggerSpeedUnitsPerSec": 2.5,
-    "resetExt": 0.65
+    "startExt": 0.65,
+    "triggerExt": 0.85,
+    "triggerSpeedUnitsPerSec": 1.8,
+    "ampRequired": 0.35,
+    "resetExt": 0.7
   },
   "hook": {
-    "startRotDeg": 8.0,
-    "triggerRotDeg": 25.0,
-    "maxElbowDeg": 100.0,
-    "triggerSpeedUnitsPerSec": 1.8,
-    "resetRotDeg": 10.0
+    "startRotDeg": 6.0,
+    "triggerRotDeg": 12.0,
+    "maxElbowDeg": 110.0,
+    "triggerSpeedUnitsPerSec": 1.5,
+    "ampRequiredDeg": 8.0,
+    "resetRotDeg": 6.0
   },
   "uppercut": {
-    "hipDropStart": 0.1,
-    "riseDistance": 0.4,
-    "riseMaxSeconds": 0.5,
-    "maxElbowDeg": 120.0
+    "riseDistance": 0.3,
+    "riseMaxSeconds": 0.6,
+    "maxElbowDeg": 120.0,
+    "elbowRise": 0.08,
+    "maxWristLateral": 0.25,
+    "baseHoldMs": 100,
+    "resetHoldMs": 150
   },
   "duck": {
-    "triggerDepth": 0.15,
+    "triggerDepth": 0.1,
     "holdMinMs": 250,
     "holdMaxMs": 400,
+    "trunkDrop": 0.05,
     "degradedValue": 0.5
   },
   "dodge": {
     "startDisp": 0.05,
     "triggerDisp": 0.2,
     "triggerMaxSeconds": 0.6,
-    "resetDisp": 0.1
+    "resetDisp": 0.1,
+    "maxVertShift": 0.12
   },
   "guard": {
     "holdMs": 500,
-    "maxWristWidth": 0.5
+    "maxWristWidth": 0.5,
+    "minLikelihood": 0.25
   },
   "conflicts": {
     "hookVsDodgeMs": 300

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import com.google.mlkit.vision.pose.PoseLandmark
@@ -65,6 +66,26 @@ class PoseOverlayView @JvmOverloads constructor(
     }
     private val warnPaint = Paint(textPaint).apply { color = Color.rgb(255, 80, 80) }
     private val okPaint = Paint(textPaint).apply { color = Color.rgb(0, 255, 140) }
+    private val gesturePaint = Paint().apply {
+        color = Color.rgb(255, 200, 60)
+        textSize = 64f
+        typeface = Typeface.DEFAULT_BOLD
+        isAntiAlias = true
+    }
+
+    /** Dernier geste détecté affiché à l'écran (null = rien). @Volatile : écrit
+     *  depuis le thread ML Kit, lu par onDraw sur le main thread. */
+    @Volatile
+    private var lastGesture: String? = null
+    private var lastGestureNs = 0L
+    private val GESTURE_SHOW_MS = 1500L
+
+    /** Affiche le dernier geste détecté (appelé depuis le thread ML Kit). */
+    fun setLastGesture(text: String) {
+        lastGesture = text
+        lastGestureNs = System.nanoTime()
+        postInvalidateOnAnimation()
+    }
 
     private var landmarkBuf: FloatArray? = null
     private var latencyMs = 0f
@@ -136,7 +157,19 @@ class PoseOverlayView @JvmOverloads constructor(
 
         drawPlacementGuide(canvas, landmarkBuf)
         drawSkeleton(canvas, landmarkBuf)
+        drawLastGesture(canvas)
         drawHud(canvas)
+    }
+
+    /** Gros texte centré du dernier geste, fondu après 1.5 s. */
+    private fun drawLastGesture(canvas: Canvas) {
+        val g = lastGesture ?: return
+        val age = (System.nanoTime() - lastGestureNs) / 1_000_000
+        if (age > GESTURE_SHOW_MS) return
+        val fade = (GESTURE_SHOW_MS - age).coerceIn(0L, 400L) * 255 / 400
+        gesturePaint.alpha = fade.toInt().coerceIn(0, 255)
+        val textW = gesturePaint.measureText(g)
+        canvas.drawText(g, (width - textW) / 2f, height * 0.35f, gesturePaint)
     }
 
     /** Retourne null si le landmark i est absent (lik < 0) ou peu fiable. */

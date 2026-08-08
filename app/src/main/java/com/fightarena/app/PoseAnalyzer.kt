@@ -85,7 +85,7 @@ class PoseAnalyzer(
 ) : ImageAnalysis.Analyzer, PoseSource {
 
     /** Détection des 6 gestes de combat sur les landmarks filtrés (spec gesture-spec.md). */
-    private val gestureDetector = GestureDetector(context) { ev ->
+    private val gestureDetector = GestureDetector.fromAssets(context) { ev ->
         Log.i(
             "PoseGesture",
             "TRIGGER ${ev.name}" +
@@ -93,6 +93,19 @@ class PoseAnalyzer(
                 (ev.direction?.let { "_$it" } ?: "") +
                 " ${ev.signals}"
         )
+        overlay.setLastGesture(gestureLabel(ev))
+    }
+
+    /** Libellé français du geste pour le HUD. */
+    private fun gestureLabel(ev: GestureEvent): String = when (ev.name) {
+        "jab" -> if (ev.side == "left") "JAB GAUCHE" else "JAB DROIT"
+        "hook" -> if (ev.side == "left") "CROCHET GAUCHE" else "CROCHET DROIT"
+        "uppercut" -> if (ev.side == "left") "UPPERCUT GAUCHE" else "UPPERCUT DROIT"
+        "duck" -> "DUCK"
+        "duck_degraded" -> "DUCK FAIBLE"
+        "dodge" -> if (ev.direction == "left") "ESQUIVE GAUCHE" else "ESQUIVE DROITE"
+        "guard" -> "GARDE"
+        else -> ev.name
     }
 
     private val detector: PoseDetector = PoseDetection.getClient(
@@ -190,7 +203,7 @@ class PoseAnalyzer(
                 fillLandmarkBuf(pose, landmarkBuf, displayW, displayH, startNs / 1e9)
                 if (landmarkBuf[3] >= 0f) {
                     // Détection des gestes sur le buffer FILTRÉ (anti-saccades déjà appliqué)
-                    gestureDetector.process(landmarkBuf, startNs / 1e9)
+                    gestureDetector.process(landmarkBuf, startNs / 1e9, displayH)
                 } else {
                     gestureDetector.resetAll()
                 }

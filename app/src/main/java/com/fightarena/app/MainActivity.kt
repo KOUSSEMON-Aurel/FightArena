@@ -1,6 +1,7 @@
 package com.fightarena.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Size
@@ -38,6 +39,9 @@ class MainActivity : ComponentActivity() {
         overlay = findViewById(R.id.poseOverlay)
         overlay.mirrored = true
         initTorchButton()
+        findViewById<View>(R.id.gestureGuideButton).setOnClickListener {
+            startActivity(Intent(this, GestureGuideActivity::class.java))
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
