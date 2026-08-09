@@ -42,6 +42,9 @@ class MainActivity : ComponentActivity() {
         findViewById<View>(R.id.gestureGuideButton).setOnClickListener {
             startActivity(Intent(this, GestureGuideActivity::class.java))
         }
+        findViewById<View>(R.id.quickPoseButton).setOnClickListener {
+            startActivity(Intent(this, QuickPoseActivity::class.java))
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED

@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fightarena.app"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
@@ -48,4 +48,12 @@ dependencies {
     implementation(libs.camera.view)
     implementation(libs.mlkit.pose.detection)
     implementation(libs.mlkit.pose.detection.accurate)
+    implementation(libs.quickpose.core)
+    implementation(libs.quickpose.mp)
+    implementation(libs.protobuf.javalite)
+    implementation(libs.guava)
+    implementation(libs.onnxruntime)
+    implementation(libs.flogger)
+    implementation(libs.flogger.backend)
+    implementation(libs.lifecycle.runtime.ktx)
 }

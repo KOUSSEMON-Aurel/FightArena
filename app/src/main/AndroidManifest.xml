@@ -6,6 +6,7 @@
         android:required="true" />
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -13,6 +14,12 @@
         android:label="FightArena"
         android:supportsRtl="true"
         android:theme="@style/Theme.FightArena">
+
+        <activity
+            android:name=".QuickPoseActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".GestureGuideActivity"

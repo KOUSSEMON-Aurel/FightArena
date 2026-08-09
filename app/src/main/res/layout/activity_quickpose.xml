@@ -3,8 +3,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.camera.view.PreviewView
-        android:id="@+id/previewView"
+    <FrameLayout
+        android:id="@+id/quickposeCameraContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
@@ -13,17 +13,6 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <ImageButton
-        android:id="@+id/torchButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="16dp"
-        android:background="@drawable/bg_torch_button"
-        android:contentDescription="@string/app_name"
-        android:src="@drawable/ic_torch"
-        android:alpha="0.4" />
-
     <Button
         android:id="@+id/gestureGuideButton"
         android:layout_width="wrap_content"
@@ -31,12 +20,4 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
         android:text="GESTES" />
-
-    <Button
-        android:id="@+id/quickPoseButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="16dp"
-        android:text="QUICKPOSE" />
 </FrameLayout>

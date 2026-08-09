@@ -4,6 +4,13 @@ kotlin = "2.4.10"
 camerax = "1.6.1"
 mlkit-pose = "18.0.0-beta5"
 activity = "1.13.0"
+quickpose-core = "0.22"
+quickpose-mp = "0.6"
+protobuf-javalite = "3.19.1"
+guava = "27.0.1-android"
+onnxruntime = "1.28.0"
+flogger = "0.9"
+lifecycle-runtime = "2.6.1"
 
 [libraries]
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
@@ -13,6 +20,14 @@ camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", versi
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mlkit-pose-detection = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkit-pose" }
 mlkit-pose-detection-accurate = { group = "com.google.mlkit", name = "pose-detection-accurate", version.ref = "mlkit-pose" }
+quickpose-core = { group = "ai.quickpose", name = "quickpose-core", version.ref = "quickpose-core" }
+quickpose-mp = { group = "ai.quickpose", name = "quickpose-mp", version.ref = "quickpose-mp" }
+protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf-javalite" }
+guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+onnxruntime = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+flogger = { group = "com.google.flogger", name = "flogger", version.ref = "flogger" }
+flogger-backend = { group = "com.google.flogger", name = "flogger-system-backend", version.ref = "flogger" }
+lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle-runtime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
