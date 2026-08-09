@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setResolutionSelector(resolutionSelector)
                 .build()
-                .also { it.setAnalyzer(analysisExecutor, PoseAnalyzer(overlay, this)) }
+                .also { it.setAnalyzer(analysisExecutor, MoveNetAnalyzer(overlay, this)) }
 
             cameraProvider.unbindAll()
             camera = cameraProvider.bindToLifecycle(

@@ -4,6 +4,7 @@ kotlin = "2.4.10"
 camerax = "1.6.1"
 mlkit-pose = "18.0.0-beta5"
 activity = "1.13.0"
+tensorflow = "2.17.0"
 
 [libraries]
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
@@ -13,6 +14,8 @@ camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", versi
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mlkit-pose-detection = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkit-pose" }
 mlkit-pose-detection-accurate = { group = "com.google.mlkit", name = "pose-detection-accurate", version.ref = "mlkit-pose" }
+tflite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflow" }
+tflite-gpu = { group = "org.tensorflow", name = "tensorflow-lite-gpu", version.ref = "tensorflow" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

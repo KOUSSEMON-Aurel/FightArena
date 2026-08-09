@@ -48,4 +48,6 @@ dependencies {
     implementation(libs.camera.view)
     implementation(libs.mlkit.pose.detection)
     implementation(libs.mlkit.pose.detection.accurate)
+    implementation(libs.tflite)
+    implementation(libs.tflite.gpu)
 }
