@@ -84,7 +84,7 @@ class MoveNetAnalyzer(
 
     private val interpreter: Interpreter
     private val inputData: ByteBuffer
-    private val outputData: FloatArray
+    private val outputData: Array<Array<Array<FloatArray>>>
     private val frameBitmap: Bitmap
     private val frameCanvas: Canvas
 
@@ -106,16 +106,17 @@ class MoveNetAnalyzer(
     @Volatile private var detectionInFlight = false
 
     init {
-        // GPU delegate écarté : le packaging LiteRT 1.0.1 (relocation de
-        // tensorflow-lite-gpu 2.17.0) ne livre pas GpuDelegateFactory.
+        // Delegate GPU écarté : tensorflow-lite-gpu (2.13/2.16/2.17, LiteRT 1.0.1)
+        // référence GpuDelegateFactory$Options sans le livrer -> NoClassDefFoundError.
         // CPU 4 threads : suffisant pour tester la stabilité des gestes.
         val options = Interpreter.Options().apply { setNumThreads(4) }
 
         val modelBytes = context.assets.open(MODEL_ASSET).use { it.readBytes() }
-        val modelBuf = ByteBuffer.wrap(modelBytes).order(ByteOrder.nativeOrder())
+        val modelBuf = ByteBuffer.allocateDirect(modelBytes.size).order(ByteOrder.nativeOrder())
+        modelBuf.put(modelBytes).rewind()
         interpreter = Interpreter(modelBuf, options)
         inputData = ByteBuffer.allocateDirect(INPUT_SIZE * INPUT_SIZE * 3).order(ByteOrder.nativeOrder())
-        outputData = FloatArray(17 * 3)
+        outputData = Array(1) { Array(1) { Array(17) { FloatArray(3) } } }
         frameBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
         frameCanvas = Canvas(frameBitmap)
     }
@@ -248,14 +249,15 @@ class MoveNetAnalyzer(
         val dy = (INPUT_SIZE - drawH) / 2
 
         var any = false
+        val keypoints = outputData[0][0]
         for (k in 0 until 17) {
             val blaze = COCO_TO_BLAZE[k]
             if (blaze < 0) continue
-            val score = outputData[k * 3 + 2]
+            val score = keypoints[k][2]
             if (score < MIN_SCORE) continue
             // (y, x) normalisés dans l'image 256 (repère MoveNet).
-            val nx = outputData[k * 3 + 1]
-            val ny = outputData[k * 3 + 0]
+            val nx = keypoints[k][1]
+            val ny = keypoints[k][0]
             val px = (nx * INPUT_SIZE - dx) / scale
             val py = (ny * INPUT_SIZE - dy) / scale
             val idx = blaze * 4

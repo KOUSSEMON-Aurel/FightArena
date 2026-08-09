@@ -4,6 +4,8 @@ kotlin = "2.4.10"
 camerax = "1.6.1"
 mlkit-pose = "18.0.0-beta5"
 activity = "1.13.0"
+# GPU delegate écarté : tensorflow-lite-gpu (2.13/2.16/2.17, LiteRT 1.0.1)
+# référence GpuDelegateFactory$Options sans le livrer -> NoClassDefFoundError.
 tensorflow = "2.17.0"
 
 [libraries]
